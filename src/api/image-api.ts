@@ -6,7 +6,7 @@ import {
   ImageData 
 } from './types';
 
-const IMAGE_MODEL = 'grok-2-image';
+const IMAGE_MODEL = 'grok-2-image-1212';
 
 export interface GenerateImagesParams {
   prompt: string;
