@@ -1,0 +1,179 @@
+.grokidian-progress-modal,
+.grokidian-placement-modal,
+.grokidian-image-gen-modal {
+  padding: 20px;
+}
+
+.grokidian-progress-container {
+  width: 100%;
+  height: 8px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.grokidian-progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.grokidian-status-text {
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.grokidian-cancel-btn {
+  display: block;
+  margin: 0 auto;
+}
+
+.grokidian-section {
+  margin-bottom: 24px;
+}
+
+.grokidian-section h3 {
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.grokidian-concepts-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.grokidian-concept-tag {
+  background: var(--background-modifier-hover);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.grokidian-prompt-textarea {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.grokidian-reset-prompt-btn {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.grokidian-button-container {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.grokidian-placement-description {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.grokidian-suggestions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.grokidian-suggestion-card {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.grokidian-suggestion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.grokidian-image-label {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.grokidian-score {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.grokidian-score.high {
+  background: var(--color-green);
+  color: white;
+}
+
+.grokidian-score.medium {
+  background: var(--color-yellow);
+  color: black;
+}
+
+.grokidian-score.low {
+  background: var(--color-orange);
+  color: white;
+}
+
+.grokidian-suggestion-reasoning {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.grokidian-location-info {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.grokidian-location-anchor {
+  background: var(--background-modifier-hover);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.grokidian-context-preview {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11px;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.grokidian-context-preview code {
+  font-family: var(--font-monospace);
+  white-space: pre;
+  color: var(--text-muted);
+}
+
+.grokidian-no-suggestions {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}

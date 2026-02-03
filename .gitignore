@@ -1,0 +1,23 @@
+# Build artifacts
+main.js
+*.js.map
+
+# npm
+node_modules
+
+# IDE
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+
+# Test output
+coverage/
