@@ -1,29 +1,24 @@
 import { Editor, MarkdownView, Notice, App } from 'obsidian';
-import { GrokidianSettings, UseCaseMatch, PlacementSuggestion } from '../api/types';
+import { GrokidianSettings, PlacementSuggestion } from '../api/types';
 import { XAIClient } from '../api/xai-client';
 import { ImageAPI } from '../api/image-api';
-import { ContentAnalyzer } from '../services/content-analyzer';
-import { UseCaseDetector } from '../services/use-case-detector';
 import { AIPromptService } from '../services/ai-prompt-service';
 import { SmartPlacement } from '../services/smart-placement';
 import { StorageManager } from '../services/storage-manager';
-import { ImageGenModal, ImageGenOptions } from '../ui/modals/ImageGenModal';
+import { StyleSelectionModal, StyleSelectionResult, ImageSize } from '../ui/modals/StyleSelectionModal';
+import { PromptReviewModal, PromptReviewResult } from '../ui/modals/PromptReviewModal';
 import { SmartPlacementModal, PlacementResult } from '../ui/modals/SmartPlacementModal';
 import { ProgressModal } from '../ui/modals/ProgressModal';
 
 export class GenerateCommand {
   private app: App;
   private settings: GrokidianSettings;
-  private contentAnalyzer: ContentAnalyzer;
-  private useCaseDetector: UseCaseDetector;
   private smartPlacement: SmartPlacement;
   private storageManager: StorageManager;
 
   constructor(app: App, settings: GrokidianSettings) {
     this.app = app;
     this.settings = settings;
-    this.contentAnalyzer = new ContentAnalyzer();
-    this.useCaseDetector = new UseCaseDetector();
     this.smartPlacement = new SmartPlacement();
     this.storageManager = new StorageManager(app);
   }
@@ -36,31 +31,30 @@ export class GenerateCommand {
     if (!this.validateApiKey()) return;
 
     const content = editor.getValue();
+    if (!content || content.trim().length < 10) {
+      new Notice('Please add some content to your note first');
+      return;
+    }
+
     const noteTitle = view.file?.basename || 'untitled';
-    
-    await this.runGeneration(content, noteTitle, editor, view);
+    await this.startGenerationFlow(content, noteTitle, editor, view);
   }
 
   async executeFromSelection(editor: Editor, view: MarkdownView): Promise<void> {
     if (!this.validateApiKey()) return;
 
     const selection = editor.getSelection();
-    if (!selection || selection.trim().length === 0) {
-      new Notice('Please select some text first');
+    if (!selection || selection.trim().length < 10) {
+      new Notice('Please select more text (at least 10 characters)');
       return;
     }
 
     const noteTitle = view.file?.basename || 'untitled';
-    await this.runGeneration(selection, noteTitle, editor, view);
+    await this.startGenerationFlow(selection, noteTitle, editor, view);
   }
 
   async executeManual(editor: Editor, view: MarkdownView): Promise<void> {
-    if (!this.validateApiKey()) return;
-
-    const content = editor.getValue();
-    const noteTitle = view.file?.basename || 'untitled';
-    
-    await this.runGeneration(content, noteTitle, editor, view, true);
+    await this.executeAuto(editor, view);
   }
 
   private validateApiKey(): boolean {
@@ -71,150 +65,173 @@ export class GenerateCommand {
     return true;
   }
 
-  private async runGeneration(
+  private async startGenerationFlow(
     content: string,
     noteTitle: string,
     editor: Editor,
-    view: MarkdownView,
-    forceManual: boolean = false
+    view: MarkdownView
+  ): Promise<void> {
+    const styleModal = new StyleSelectionModal(
+      this.app,
+      async (styleResult: StyleSelectionResult) => {
+        if (!styleResult.confirmed) return;
+        
+        await this.generatePrompts(content, noteTitle, styleResult, editor, view);
+      }
+    );
+    
+    styleModal.open();
+  }
+
+  private async generatePrompts(
+    content: string,
+    noteTitle: string,
+    styleResult: StyleSelectionResult,
+    editor: Editor,
+    view: MarkdownView
   ): Promise<void> {
     const progressModal = new ProgressModal(this.app);
     progressModal.open();
-    progressModal.setStatus('Analyzing note content with AI...');
+    progressModal.setStatus('AI is analyzing your note content...');
 
     try {
-      const concepts = this.contentAnalyzer.extractConcepts(content);
-      const detectedUseCase = this.useCaseDetector.detectUseCase(content, concepts);
-      
       const client = new XAIClient(this.settings.apiKey);
       const aiPromptService = new AIPromptService(client);
       
-      progressModal.setStatus('AI is generating optimized prompts...');
+      progressModal.setStatus(`Generating ${styleResult.imageCount} optimized prompts for ${styleResult.styleName} style...`);
       
       const aiResult = await aiPromptService.generatePromptsFromNote(
         content,
-        this.settings.defaultImageCount,
-        this.settings.defaultStyle,
-        this.settings.defaultUseCase
+        styleResult.imageCount,
+        styleResult.style
       );
 
       progressModal.close();
 
-      const initialPrompt = aiResult.prompts.join('\n\n---\n\n');
+      if (aiResult.prompts.length === 0) {
+        new Notice('Failed to generate prompts. Please try again.');
+        return;
+      }
 
-      const modal = new ImageGenModal(
+      const promptModal = new PromptReviewModal(
         this.app,
-        this.settings,
-        concepts,
-        detectedUseCase,
-        initialPrompt,
-        async (options: ImageGenOptions) => {
-          if (!options.confirmed) return;
+        aiResult.prompts,
+        styleResult.styleName,
+        styleResult.imageCount,
+        async (promptResult: PromptReviewResult) => {
+          if (!promptResult.confirmed) {
+            await this.startGenerationFlow(content, noteTitle, editor, view);
+            return;
+          }
           
-          await this.generateAndInsertImages(
+          await this.generateImages(
             content,
             noteTitle,
-            options,
-            aiResult.prompts,
+            styleResult,
+            promptResult.prompts,
             editor,
-            view,
-            forceManual
+            view
           );
         }
       );
       
-      modal.open();
+      promptModal.open();
 
     } catch (error) {
       progressModal.close();
-      new Notice(`Error analyzing content: ${(error as Error).message}`);
+      new Notice(`Error generating prompts: ${(error as Error).message}`);
     }
   }
 
-  private async generateAndInsertImages(
+  private async generateImages(
     content: string,
     noteTitle: string,
-    options: ImageGenOptions,
-    aiPrompts: string[],
+    styleResult: StyleSelectionResult,
+    prompts: string[],
     editor: Editor,
-    view: MarkdownView,
-    forceManual: boolean
+    view: MarkdownView
   ): Promise<void> {
     const progressModal = new ProgressModal(this.app);
     progressModal.open();
 
     try {
-      const totalSteps = options.imageCount + 2;
-      progressModal.updateProgress(0, totalSteps, 'Starting image generation...');
-
       const client = new XAIClient(this.settings.apiKey);
       const imageApi = new ImageAPI(client);
       
       const savedPaths: string[] = [];
-      const promptsToUse = this.getPromptsToUse(options, aiPrompts);
+      const totalImages = prompts.length;
 
-      for (let i = 0; i < options.imageCount; i++) {
+      for (let i = 0; i < totalImages; i++) {
         if (progressModal.isOperationCancelled()) {
           progressModal.close();
+          if (savedPaths.length > 0) {
+            new Notice(`Cancelled. Generated ${savedPaths.length} image(s) before cancellation.`);
+          }
           return;
         }
 
-        progressModal.updateProgress(i + 1, totalSteps, `Generating image ${i + 1} of ${options.imageCount}...`);
+        progressModal.updateProgress(i, totalImages, `Generating image ${i + 1} of ${totalImages}...`);
 
-        const prompt = promptsToUse[i] || promptsToUse[0];
+        const prompt = prompts[i];
         
-        const images = await imageApi.generateImages({
-          prompt,
-          count: 1,
-          aspectRatio: options.aspectRatio
-        });
+        try {
+          const images = await imageApi.generateImages({
+            prompt,
+            count: 1,
+            aspectRatio: styleResult.aspectRatio
+          });
 
-        if (images.length > 0) {
-          const image = images[0];
-          let imagePath: string;
-          
-          if (image.url) {
-            imagePath = await this.storageManager.saveImageFromUrl(
-              image.url,
-              noteTitle,
-              options.style,
-              i,
-              this.settings
-            );
-          } else if (image.base64) {
-            imagePath = await this.storageManager.saveImageFromBase64(
-              image.base64,
-              noteTitle,
-              options.style,
-              i,
-              this.settings
-            );
-          } else {
-            continue;
+          if (images.length > 0) {
+            const image = images[0];
+            progressModal.setStatus(`Saving image ${i + 1}...`);
+            
+            let imagePath: string;
+            
+            if (image.url) {
+              imagePath = await this.storageManager.saveImageFromUrl(
+                image.url,
+                noteTitle,
+                styleResult.style,
+                i,
+                this.settings
+              );
+            } else if (image.base64) {
+              imagePath = await this.storageManager.saveImageFromBase64(
+                image.base64,
+                noteTitle,
+                styleResult.style,
+                i,
+                this.settings
+              );
+            } else {
+              continue;
+            }
+
+            savedPaths.push(imagePath);
           }
-
-          savedPaths.push(imagePath);
+        } catch (imageError) {
+          console.error(`Error generating image ${i + 1}:`, imageError);
+          new Notice(`Warning: Failed to generate image ${i + 1}. Continuing...`);
         }
       }
 
-      progressModal.updateProgress(totalSteps - 1, totalSteps, 'Finalizing...');
       progressModal.close();
 
       if (savedPaths.length === 0) {
-        new Notice('No images were generated');
+        new Notice('No images were generated. Please check your prompts and try again.');
         return;
       }
 
       await this.insertImages(
         savedPaths,
         content,
-        promptsToUse[0],
+        prompts[0],
+        styleResult.imageSize,
         editor,
-        view,
-        forceManual
+        view
       );
 
-      new Notice(`Generated ${savedPaths.length} image(s) successfully!`);
+      new Notice(`Successfully generated ${savedPaths.length} image(s)!`);
 
     } catch (error) {
       progressModal.close();
@@ -222,32 +239,19 @@ export class GenerateCommand {
     }
   }
 
-  private getPromptsToUse(options: ImageGenOptions, aiPrompts: string[]): string[] {
-    const userPrompt = options.generatedPrompt.trim();
-    
-    if (userPrompt.includes('---')) {
-      return userPrompt.split('---').map(p => p.trim()).filter(p => p.length > 0);
-    }
-    
-    if (userPrompt !== aiPrompts.join('\n\n---\n\n')) {
-      return [userPrompt];
-    }
-    
-    return aiPrompts;
-  }
-
   private async insertImages(
     imagePaths: string[],
     noteContent: string,
     prompt: string,
+    imageSize: ImageSize,
     editor: Editor,
-    view: MarkdownView,
-    forceManual: boolean
+    view: MarkdownView
   ): Promise<void> {
-    const insertionMode = forceManual ? 'manual' : this.settings.insertionMode;
+    const insertionMode = this.settings.insertionMode;
+    const sizeValue = this.getSizeValue(imageSize);
 
     if (insertionMode === 'manual') {
-      this.insertAtCursor(imagePaths, editor);
+      this.insertAtCursor(imagePaths, sizeValue, editor);
       return;
     }
 
@@ -267,9 +271,9 @@ export class GenerateCommand {
             if (!result.accepted) return;
 
             if (result.useManual || result.selectedPlacements.size === 0) {
-              this.insertAtCursor(imagePaths, editor);
+              this.insertAtCursor(imagePaths, sizeValue, editor);
             } else {
-              this.insertWithPlacements(imagePaths, result.selectedPlacements, editor);
+              this.insertWithPlacements(imagePaths, result.selectedPlacements, sizeValue, editor);
             }
           }
         );
@@ -278,12 +282,22 @@ export class GenerateCommand {
       }
     }
 
-    this.insertAtCursor(imagePaths, editor);
+    this.insertAtCursor(imagePaths, sizeValue, editor);
   }
 
-  private insertAtCursor(imagePaths: string[], editor: Editor): void {
+  private getSizeValue(size: ImageSize): number {
+    const sizes: Record<ImageSize, number> = {
+      'small': 256,
+      'medium': 512,
+      'large': 700,
+      'extra-large': 1000
+    };
+    return sizes[size] || 700;
+  }
+
+  private insertAtCursor(imagePaths: string[], sizeValue: number, editor: Editor): void {
     const imageLinks = imagePaths
-      .map(path => this.storageManager.generateWikiImageLink(path))
+      .map(path => this.generateImageEmbed(path, sizeValue))
       .join('\n\n');
     
     const cursor = editor.getCursor();
@@ -293,22 +307,23 @@ export class GenerateCommand {
   private insertWithPlacements(
     imagePaths: string[],
     placements: Map<number, PlacementSuggestion>,
+    sizeValue: number,
     editor: Editor
   ): void {
     const sortedInsertions: { line: number; content: string }[] = [];
     
     for (let i = 0; i < imagePaths.length; i++) {
       const placement = placements.get(i);
-      const imageLink = this.storageManager.generateWikiImageLink(imagePaths[i]);
+      const imageEmbed = this.generateImageEmbed(imagePaths[i], sizeValue);
       
       if (placement) {
         const line = placement.location.position === 'after'
           ? placement.location.lineNumber
           : placement.location.lineNumber - 1;
-        sortedInsertions.push({ line, content: imageLink });
+        sortedInsertions.push({ line, content: imageEmbed });
       } else {
         const cursor = editor.getCursor();
-        sortedInsertions.push({ line: cursor.line, content: imageLink });
+        sortedInsertions.push({ line: cursor.line, content: imageEmbed });
       }
     }
 
@@ -321,5 +336,10 @@ export class GenerateCommand {
         { line: insertion.line, ch: lineContent.length }
       );
     }
+  }
+
+  private generateImageEmbed(imagePath: string, sizeValue: number): string {
+    const filename = imagePath.split('/').pop() || imagePath;
+    return `![[${filename}|${sizeValue}]]`;
   }
 }
