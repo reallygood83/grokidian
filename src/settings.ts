@@ -4,6 +4,7 @@ import { STYLE_TEMPLATES } from './constants/styles';
 import { USE_CASE_TEMPLATES } from './constants/use-cases';
 import { MIN_IMAGE_COUNT, MAX_IMAGE_COUNT } from './constants/config';
 import { XAIClient } from './api/xai-client';
+import { FolderSuggestModal } from './ui/modals/FolderSuggestModal';
 import type GrokidianPlugin from './main';
 
 export class GrokidianSettingTab extends PluginSettingTab {
@@ -187,6 +188,19 @@ export class GrokidianSettingTab extends PluginSettingTab {
             .onChange(async (value) => {
               this.plugin.settings.customStoragePath = value;
               await this.plugin.saveSettings();
+            });
+          text.inputEl.style.width = '200px';
+        })
+        .addButton(button => {
+          button
+            .setButtonText('Browse')
+            .onClick(() => {
+              new FolderSuggestModal(this.app, async (folder) => {
+                const path = folder.path === '/' ? '' : folder.path;
+                this.plugin.settings.customStoragePath = path;
+                await this.plugin.saveSettings();
+                this.display();
+              }).open();
             });
         });
     }
