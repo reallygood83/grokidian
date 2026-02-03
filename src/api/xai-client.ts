@@ -1,7 +1,9 @@
 import { requestUrl, RequestUrlParam } from 'obsidian';
 import { 
   ImageGenerationRequest, 
-  ImageGenerationResponse, 
+  ImageGenerationResponse,
+  ChatCompletionRequest,
+  ChatCompletionResponse,
   XAIErrorResponse 
 } from './types';
 
@@ -50,6 +52,25 @@ export class XAIClient {
       }
       
       return response.json as ImageGenerationResponse;
+    });
+  }
+
+  async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+    return this.retryWithBackoff(async () => {
+      await this.enforceRateLimit();
+      
+      const response = await this.makeRequest('/chat/completions', 'POST', request);
+      
+      if (response.status !== 200) {
+        const errorBody = response.json as XAIErrorResponse;
+        throw new XAIError(
+          errorBody?.error?.message || 'Unknown error',
+          errorBody?.error?.code || 'unknown',
+          response.status
+        );
+      }
+      
+      return response.json as ChatCompletionResponse;
     });
   }
 

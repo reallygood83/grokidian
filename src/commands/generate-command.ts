@@ -1,10 +1,10 @@
 import { Editor, MarkdownView, Notice, App } from 'obsidian';
 import { GrokidianSettings, UseCaseMatch, PlacementSuggestion } from '../api/types';
 import { XAIClient } from '../api/xai-client';
-import { ImageAPI, GeneratedImage } from '../api/image-api';
+import { ImageAPI } from '../api/image-api';
 import { ContentAnalyzer } from '../services/content-analyzer';
 import { UseCaseDetector } from '../services/use-case-detector';
-import { PromptGenerator } from '../services/prompt-generator';
+import { AIPromptService } from '../services/ai-prompt-service';
 import { SmartPlacement } from '../services/smart-placement';
 import { StorageManager } from '../services/storage-manager';
 import { ImageGenModal, ImageGenOptions } from '../ui/modals/ImageGenModal';
@@ -16,7 +16,6 @@ export class GenerateCommand {
   private settings: GrokidianSettings;
   private contentAnalyzer: ContentAnalyzer;
   private useCaseDetector: UseCaseDetector;
-  private promptGenerator: PromptGenerator;
   private smartPlacement: SmartPlacement;
   private storageManager: StorageManager;
 
@@ -25,7 +24,6 @@ export class GenerateCommand {
     this.settings = settings;
     this.contentAnalyzer = new ContentAnalyzer();
     this.useCaseDetector = new UseCaseDetector();
-    this.promptGenerator = new PromptGenerator();
     this.smartPlacement = new SmartPlacement();
     this.storageManager = new StorageManager(app);
   }
@@ -80,43 +78,64 @@ export class GenerateCommand {
     view: MarkdownView,
     forceManual: boolean = false
   ): Promise<void> {
-    const concepts = this.contentAnalyzer.extractConcepts(content);
-    const detectedUseCase = this.useCaseDetector.detectUseCase(content, concepts);
-    
-    const initialPrompt = this.promptGenerator.generateAutoPrompt(
-      concepts,
-      this.settings.defaultUseCase,
-      this.settings.defaultStyle,
-      detectedUseCase.template
-    );
+    const progressModal = new ProgressModal(this.app);
+    progressModal.open();
+    progressModal.setStatus('Analyzing note content with AI...');
 
-    const modal = new ImageGenModal(
-      this.app,
-      this.settings,
-      concepts,
-      detectedUseCase,
-      initialPrompt,
-      async (options: ImageGenOptions) => {
-        if (!options.confirmed) return;
-        
-        await this.generateAndInsertImages(
-          content,
-          noteTitle,
-          options,
-          editor,
-          view,
-          forceManual
-        );
-      }
-    );
-    
-    modal.open();
+    try {
+      const concepts = this.contentAnalyzer.extractConcepts(content);
+      const detectedUseCase = this.useCaseDetector.detectUseCase(content, concepts);
+      
+      const client = new XAIClient(this.settings.apiKey);
+      const aiPromptService = new AIPromptService(client);
+      
+      progressModal.setStatus('AI is generating optimized prompts...');
+      
+      const aiResult = await aiPromptService.generatePromptsFromNote(
+        content,
+        this.settings.defaultImageCount,
+        this.settings.defaultStyle,
+        this.settings.defaultUseCase
+      );
+
+      progressModal.close();
+
+      const initialPrompt = aiResult.prompts.join('\n\n---\n\n');
+
+      const modal = new ImageGenModal(
+        this.app,
+        this.settings,
+        concepts,
+        detectedUseCase,
+        initialPrompt,
+        async (options: ImageGenOptions) => {
+          if (!options.confirmed) return;
+          
+          await this.generateAndInsertImages(
+            content,
+            noteTitle,
+            options,
+            aiResult.prompts,
+            editor,
+            view,
+            forceManual
+          );
+        }
+      );
+      
+      modal.open();
+
+    } catch (error) {
+      progressModal.close();
+      new Notice(`Error analyzing content: ${(error as Error).message}`);
+    }
   }
 
   private async generateAndInsertImages(
     content: string,
     noteTitle: string,
     options: ImageGenOptions,
+    aiPrompts: string[],
     editor: Editor,
     view: MarkdownView,
     forceManual: boolean
@@ -125,58 +144,60 @@ export class GenerateCommand {
     progressModal.open();
 
     try {
-      progressModal.updateProgress(0, options.imageCount + 1, 'Generating images...');
+      const totalSteps = options.imageCount + 2;
+      progressModal.updateProgress(0, totalSteps, 'Starting image generation...');
 
       const client = new XAIClient(this.settings.apiKey);
       const imageApi = new ImageAPI(client);
       
-      const images = await imageApi.generateImages({
-        prompt: options.generatedPrompt,
-        count: options.imageCount,
-        aspectRatio: options.aspectRatio
-      });
-
-      if (progressModal.isOperationCancelled()) {
-        progressModal.close();
-        return;
-      }
-
-      progressModal.updateProgress(1, options.imageCount + 1, 'Saving images...');
-
       const savedPaths: string[] = [];
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        
+      const promptsToUse = this.getPromptsToUse(options, aiPrompts);
+
+      for (let i = 0; i < options.imageCount; i++) {
         if (progressModal.isOperationCancelled()) {
           progressModal.close();
           return;
         }
 
-        let imagePath: string;
-        if (image.url) {
-          imagePath = await this.storageManager.saveImageFromUrl(
-            image.url,
-            noteTitle,
-            options.style,
-            i,
-            this.settings
-          );
-        } else if (image.base64) {
-          imagePath = await this.storageManager.saveImageFromBase64(
-            image.base64,
-            noteTitle,
-            options.style,
-            i,
-            this.settings
-          );
-        } else {
-          continue;
-        }
+        progressModal.updateProgress(i + 1, totalSteps, `Generating image ${i + 1} of ${options.imageCount}...`);
 
-        savedPaths.push(imagePath);
-        progressModal.updateProgress(i + 2, options.imageCount + 1, `Saved image ${i + 1}`);
+        const prompt = promptsToUse[i] || promptsToUse[0];
+        
+        const images = await imageApi.generateImages({
+          prompt,
+          count: 1,
+          aspectRatio: options.aspectRatio
+        });
+
+        if (images.length > 0) {
+          const image = images[0];
+          let imagePath: string;
+          
+          if (image.url) {
+            imagePath = await this.storageManager.saveImageFromUrl(
+              image.url,
+              noteTitle,
+              options.style,
+              i,
+              this.settings
+            );
+          } else if (image.base64) {
+            imagePath = await this.storageManager.saveImageFromBase64(
+              image.base64,
+              noteTitle,
+              options.style,
+              i,
+              this.settings
+            );
+          } else {
+            continue;
+          }
+
+          savedPaths.push(imagePath);
+        }
       }
 
+      progressModal.updateProgress(totalSteps - 1, totalSteps, 'Finalizing...');
       progressModal.close();
 
       if (savedPaths.length === 0) {
@@ -187,7 +208,7 @@ export class GenerateCommand {
       await this.insertImages(
         savedPaths,
         content,
-        options.generatedPrompt,
+        promptsToUse[0],
         editor,
         view,
         forceManual
@@ -199,6 +220,20 @@ export class GenerateCommand {
       progressModal.close();
       new Notice(`Error: ${(error as Error).message}`);
     }
+  }
+
+  private getPromptsToUse(options: ImageGenOptions, aiPrompts: string[]): string[] {
+    const userPrompt = options.generatedPrompt.trim();
+    
+    if (userPrompt.includes('---')) {
+      return userPrompt.split('---').map(p => p.trim()).filter(p => p.length > 0);
+    }
+    
+    if (userPrompt !== aiPrompts.join('\n\n---\n\n')) {
+      return [userPrompt];
+    }
+    
+    return aiPrompts;
   }
 
   private async insertImages(

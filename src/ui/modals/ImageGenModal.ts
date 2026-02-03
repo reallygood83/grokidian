@@ -163,24 +163,44 @@ export class ImageGenModal extends Modal {
 
   private renderPromptSection(container: HTMLElement) {
     const section = container.createDiv({ cls: 'grokidian-section' });
-    section.createEl('h3', { text: 'Generated Prompt (Editable)' });
+    
+    const headerContainer = section.createDiv({ cls: 'grokidian-prompt-header' });
+    headerContainer.createEl('h3', { text: 'AI-Generated Prompts' });
+    headerContainer.createEl('span', { 
+      text: 'Powered by Grok AI',
+      cls: 'grokidian-ai-badge'
+    });
+
+    const promptCount = this.generatedPrompt.split('---').filter(p => p.trim()).length;
+    section.createEl('p', {
+      text: `${promptCount} unique prompt(s) generated. Each image will use a different prompt. You can edit below.`,
+      cls: 'grokidian-prompt-description'
+    });
     
     const textarea = section.createEl('textarea', {
       cls: 'grokidian-prompt-textarea'
     });
     textarea.value = this.editedPrompt;
-    textarea.rows = 4;
+    textarea.rows = 8;
+    textarea.placeholder = 'AI-generated prompts will appear here. Separate multiple prompts with ---';
     textarea.addEventListener('input', (e) => {
       this.editedPrompt = (e.target as HTMLTextAreaElement).value;
     });
+
+    const buttonRow = section.createDiv({ cls: 'grokidian-prompt-buttons' });
     
-    const resetBtn = section.createEl('button', {
+    const resetBtn = buttonRow.createEl('button', {
       text: 'Reset to AI-Generated',
       cls: 'grokidian-reset-prompt-btn'
     });
     resetBtn.addEventListener('click', () => {
       this.editedPrompt = this.generatedPrompt;
       textarea.value = this.generatedPrompt;
+    });
+
+    const tipText = section.createEl('p', {
+      text: 'Tip: Use "---" to separate prompts for different images.',
+      cls: 'grokidian-prompt-tip'
     });
   }
 

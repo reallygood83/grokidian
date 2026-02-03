@@ -42,6 +42,33 @@ export interface VideoGenerationResponse {
 
 export type VideoStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
+// Chat Completion Types
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatCompletionRequest {
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface ChatCompletionResponse {
+  id: string;
+  choices: Array<{
+    index: number;
+    message: ChatMessage;
+    finish_reason: string;
+  }>;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 // Error Types
 export interface XAIErrorResponse {
   error: {
