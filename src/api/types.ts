@@ -185,14 +185,18 @@ export interface InsertionLocation {
 
 export type InsertionMode = 'ai_smart' | 'manual' | 'ask_each_time';
 
+export type StorageLocation = 'obsidian' | 'vault_custom' | 'external';
+
 export interface GrokidianSettings {
   apiKey: string;
   defaultStyle: string;
   defaultAspectRatio: AspectRatio;
   defaultImageCount: number;
   insertionMode: InsertionMode;
+  storageLocation: StorageLocation;
   useObsidianAttachmentFolder: boolean;
   customStoragePath: string;
+  externalFolderPath: string;
   createMonthlySubfolders: boolean;
   includeTimestampInFilename: boolean;
   defaultUseCase: 'auto_detect' | UseCaseTemplateId;
@@ -204,8 +208,10 @@ export const DEFAULT_SETTINGS: GrokidianSettings = {
   defaultAspectRatio: '16:9',
   defaultImageCount: 3,
   insertionMode: 'ai_smart',
+  storageLocation: 'obsidian',
   useObsidianAttachmentFolder: true,
   customStoragePath: '',
+  externalFolderPath: '',
   createMonthlySubfolders: true,
   includeTimestampInFilename: true,
   defaultUseCase: 'auto_detect',

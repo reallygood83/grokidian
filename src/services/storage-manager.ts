@@ -1,6 +1,12 @@
-import { App, TFile, TFolder, normalizePath, requestUrl } from 'obsidian';
+import { App, TFile, TFolder, normalizePath, requestUrl, Platform } from 'obsidian';
 import { GrokidianSettings } from '../api/types';
 import { IMAGE_FILE_PREFIX } from '../constants/config';
+
+declare global {
+  interface Window {
+    require: (module: string) => any;
+  }
+}
 
 export class StorageManager {
   private app: App;
@@ -20,12 +26,14 @@ export class StorageManager {
     const arrayBuffer = response.arrayBuffer;
     
     const filename = this.generateFilename(noteTitle, style, index, settings);
+    
+    if (settings.storageLocation === 'external' && settings.externalFolderPath) {
+      return this.saveToExternalFolder(arrayBuffer, filename, settings);
+    }
+    
     const folderPath = this.getAttachmentPath(settings);
-    
     await this.ensureFolderExists(folderPath);
-    
     const fullPath = normalizePath(`${folderPath}/${filename}`);
-    
     await this.app.vault.createBinary(fullPath, arrayBuffer);
     
     return fullPath;
@@ -45,19 +53,52 @@ export class StorageManager {
     }
     
     const filename = this.generateFilename(noteTitle, style, index, settings);
+    
+    if (settings.storageLocation === 'external' && settings.externalFolderPath) {
+      return this.saveToExternalFolder(bytes.buffer, filename, settings);
+    }
+    
     const folderPath = this.getAttachmentPath(settings);
-    
     await this.ensureFolderExists(folderPath);
-    
     const fullPath = normalizePath(`${folderPath}/${filename}`);
-    
     await this.app.vault.createBinary(fullPath, bytes.buffer);
     
     return fullPath;
   }
 
+  private async saveToExternalFolder(
+    data: ArrayBuffer,
+    filename: string,
+    settings: GrokidianSettings
+  ): Promise<string> {
+    if (!Platform.isDesktopApp) {
+      throw new Error('External folder storage is only available on desktop');
+    }
+
+    const fs = window.require('fs');
+    const path = window.require('path');
+    
+    let folderPath = settings.externalFolderPath;
+    
+    if (settings.createMonthlySubfolders) {
+      const now = new Date();
+      const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      folderPath = path.join(folderPath, yearMonth);
+    }
+    
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+    
+    const fullPath = path.join(folderPath, filename);
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(fullPath, buffer);
+    
+    return `file://${fullPath}`;
+  }
+
   getAttachmentPath(settings: GrokidianSettings): string {
-    if (!settings.useObsidianAttachmentFolder && settings.customStoragePath) {
+    if (settings.storageLocation === 'vault_custom' && settings.customStoragePath) {
       let path = settings.customStoragePath;
       
       if (settings.createMonthlySubfolders) {
@@ -133,12 +174,27 @@ export class StorageManager {
   generateMarkdownImageLink(imagePath: string, altText?: string): string {
     const filename = imagePath.split('/').pop() || imagePath;
     const alt = altText || filename.replace(/\.[^/.]+$/, '');
+    
+    if (imagePath.startsWith('file://')) {
+      return `![${alt}](${imagePath})`;
+    }
+    
     return `![${alt}](${imagePath})`;
   }
 
   generateWikiImageLink(imagePath: string): string {
+    if (imagePath.startsWith('file://')) {
+      const filename = imagePath.split('/').pop() || imagePath;
+      const alt = filename.replace(/\.[^/.]+$/, '');
+      return `![${alt}](${imagePath})`;
+    }
+    
     const filename = imagePath.split('/').pop() || imagePath;
     return `![[${filename}]]`;
+  }
+  
+  isExternalPath(imagePath: string): boolean {
+    return imagePath.startsWith('file://');
   }
 
   async deleteImage(imagePath: string): Promise<void> {

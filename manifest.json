@@ -1,7 +1,7 @@
 {
   "id": "grokidian",
   "name": "Grokidian",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "minAppVersion": "0.15.0",
   "description": "AI-powered visual content generation for Obsidian. Fully automated image generation with smart placement, 10 use case templates, and 11 quality-ranked styles powered by xAI's Grok.",
   "author": "reallygood83",

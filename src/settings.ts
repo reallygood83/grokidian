@@ -1,11 +1,17 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
-import { GrokidianSettings, AspectRatio, InsertionMode, DEFAULT_SETTINGS } from './api/types';
+import { App, PluginSettingTab, Setting, Notice, Platform } from 'obsidian';
+import { GrokidianSettings, AspectRatio, InsertionMode, StorageLocation, DEFAULT_SETTINGS } from './api/types';
 import { STYLE_TEMPLATES } from './constants/styles';
 import { USE_CASE_TEMPLATES } from './constants/use-cases';
 import { MIN_IMAGE_COUNT, MAX_IMAGE_COUNT } from './constants/config';
 import { XAIClient } from './api/xai-client';
 import { FolderSuggestModal } from './ui/modals/FolderSuggestModal';
 import type GrokidianPlugin from './main';
+
+declare global {
+  interface Window {
+    require: (module: string) => any;
+  }
+}
 
 export class GrokidianSettingTab extends PluginSettingTab {
   plugin: GrokidianPlugin;
@@ -165,22 +171,26 @@ export class GrokidianSettingTab extends PluginSettingTab {
     container.createEl('h2', { text: 'Storage Settings' });
 
     new Setting(container)
-      .setName('Use Obsidian Attachment Folder')
-      .setDesc('Save images to your configured Obsidian attachment folder')
-      .addToggle(toggle => {
-        toggle
-          .setValue(this.plugin.settings.useObsidianAttachmentFolder)
-          .onChange(async (value) => {
-            this.plugin.settings.useObsidianAttachmentFolder = value;
+      .setName('Storage Location')
+      .setDesc('Where to save generated images')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('obsidian', 'Obsidian Attachment Folder')
+          .addOption('vault_custom', 'Custom Vault Folder')
+          .addOption('external', 'External Folder (Outside Vault)')
+          .setValue(this.plugin.settings.storageLocation)
+          .onChange(async (value: StorageLocation) => {
+            this.plugin.settings.storageLocation = value;
+            this.plugin.settings.useObsidianAttachmentFolder = value === 'obsidian';
             await this.plugin.saveSettings();
             this.display();
           });
       });
 
-    if (!this.plugin.settings.useObsidianAttachmentFolder) {
+    if (this.plugin.settings.storageLocation === 'vault_custom') {
       new Setting(container)
-        .setName('Custom Storage Path')
-        .setDesc('Path relative to vault root (e.g., "assets/grokidian")')
+        .setName('Vault Folder Path')
+        .setDesc('Folder inside your vault (e.g., "assets/grokidian")')
         .addText(text => {
           text
             .setPlaceholder('assets/grokidian')
@@ -203,6 +213,54 @@ export class GrokidianSettingTab extends PluginSettingTab {
               }).open();
             });
         });
+    }
+
+    if (this.plugin.settings.storageLocation === 'external') {
+      new Setting(container)
+        .setName('External Folder Path')
+        .setDesc('Absolute path (e.g., "/Users/moon/Pictures/grokidian")')
+        .addText(text => {
+          text
+            .setPlaceholder('/Users/you/Pictures/grokidian')
+            .setValue(this.plugin.settings.externalFolderPath)
+            .onChange(async (value) => {
+              this.plugin.settings.externalFolderPath = value;
+              await this.plugin.saveSettings();
+            });
+          text.inputEl.style.width = '280px';
+        })
+        .addButton(button => {
+          button
+            .setButtonText('Browse')
+            .onClick(async () => {
+              if (Platform.isDesktopApp) {
+                const { remote } = window.require('@electron/remote') || window.require('electron');
+                const dialog = remote?.dialog || window.require('electron').dialog;
+                
+                try {
+                  const result = await dialog.showOpenDialog({
+                    properties: ['openDirectory', 'createDirectory'],
+                    title: 'Select Image Storage Folder'
+                  });
+                  
+                  if (!result.canceled && result.filePaths.length > 0) {
+                    this.plugin.settings.externalFolderPath = result.filePaths[0];
+                    await this.plugin.saveSettings();
+                    this.display();
+                  }
+                } catch (e) {
+                  new Notice('Folder picker not available. Please type the path manually.');
+                }
+              } else {
+                new Notice('Folder picker only available on desktop');
+              }
+            });
+        });
+
+      container.createEl('p', { 
+        text: 'Note: Images in external folders will be linked using file:// URLs',
+        cls: 'setting-item-description'
+      });
     }
 
     new Setting(container)
