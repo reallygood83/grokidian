@@ -3,7 +3,7 @@ import { ChatMessage } from '../api/types';
 import { StyleTemplate } from '../api/types';
 import { getStyleById, getDefaultStyle } from '../constants/styles';
 
-const CHAT_MODEL = 'grok-3-mini';
+const CHAT_MODEL = 'grok-4-1-fast';
 
 const SYSTEM_PROMPT = `You are an elite AI image prompt engineer with expertise in visual storytelling and artistic direction.
 
