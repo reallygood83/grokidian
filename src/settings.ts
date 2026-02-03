@@ -224,7 +224,8 @@ export class GrokidianSettingTab extends PluginSettingTab {
             .setPlaceholder('/Users/you/Pictures/grokidian')
             .setValue(this.plugin.settings.externalFolderPath)
             .onChange(async (value) => {
-              this.plugin.settings.externalFolderPath = value;
+              const cleanPath = value.trim().replace(/^['"]|['"]$/g, '');
+              this.plugin.settings.externalFolderPath = cleanPath;
               await this.plugin.saveSettings();
             });
           text.inputEl.style.width = '280px';

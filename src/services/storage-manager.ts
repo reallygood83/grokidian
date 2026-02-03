@@ -76,23 +76,35 @@ export class StorageManager {
     }
 
     const fs = window.require('fs');
-    const path = window.require('path');
+    const nodePath = window.require('path');
     
-    let folderPath = settings.externalFolderPath;
+    let folderPath = settings.externalFolderPath
+      .trim()
+      .replace(/^['"]|['"]$/g, '')
+      .replace(/^["']|["']$/g, '');
     
     if (settings.createMonthlySubfolders) {
       const now = new Date();
       const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      folderPath = path.join(folderPath, yearMonth);
+      folderPath = nodePath.join(folderPath, yearMonth);
     }
     
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true });
+    try {
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+      }
+    } catch (mkdirError: any) {
+      throw new Error(`Failed to create folder: ${folderPath}\n${mkdirError.message}`);
     }
     
-    const fullPath = path.join(folderPath, filename);
+    const fullPath = nodePath.join(folderPath, filename);
     const buffer = Buffer.from(data);
-    fs.writeFileSync(fullPath, buffer);
+    
+    try {
+      fs.writeFileSync(fullPath, buffer);
+    } catch (writeError: any) {
+      throw new Error(`Failed to write file: ${fullPath}\n${writeError.message}`);
+    }
     
     return `file://${fullPath}`;
   }
